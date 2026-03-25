@@ -8,10 +8,20 @@ import pandas as pd
 class SparkDataCheck:
     
     def __init__(self, dataframe=None):
-        
         self.df = dataframe
     
-    def instance_from_csv(self, spark, file_path):        
+    def instance_from_csv(self, spark, file_path: str):   
+        """
+        Creates a spark SQL dataframe from a csv file.
+        
+        Args:
+            spark (SparkSession): the spark session used for the proceeding commands.
+            file_path (str): the path to the csv file.
+        
+        Returns:
+            self: returns the instance of the SparkDataCheck object.
+        """
+        #load csv file as spark DataFrame
         self.df = spark.read.load(file_path,
                      format="csv", 
                      sep=",", 
@@ -19,72 +29,176 @@ class SparkDataCheck:
                      header="true")
         return self 
                     
-    def instance_from_pd(self, spark, pd_dataframe):
+    def instance_from_pd(self, spark, pd_dataframe: pd.DataFrame):
+        """
+        Creates a spark SQL dataframe from a pandas dataframe. 
+        
+        Args:
+            spark (SparkSession): the spark session used for the proceeding commands.
+            pd_dataframe (pd.DataFrame): pandas dataframe of data.
+            
+        Returns:
+            self: returns the instance of the SparkDataCheck object. 
+        """
+        #load pandas DataFrame as spark DataFrame 
         self.df = spark.createDataFrame(pd_dataframe)
         return self
 
-    def numeric_limit_check(self, column, upper=None, lower=None):
-        #!!!deal with NULL values!!!
+    def numeric_limit_check(self, column: str, upper=None, lower=None):
+        """
+        Checks if each value in a numeric column is within the user defined limits. 
+        
+        Args:
+            column (str): name of the numeric column.
+            upper (int, float): upper limit to check. 
+            lower (int, float): lower limit to check.
+        
+        Returns:
+            self: return the instance of the SparkDataCheck object. 
+        """
+        #get dictionary of columns and data types
         types = dict(self.df.dtypes)   
         
+        #set column_type as the data type of the column that was passed in
         column_type = types[column]
-    
+        
+        #check if the column is a numeric data type
         if column_type != 'bigint' and column_type != 'int' and column_type != 'longint' and column_type != 'double' and column_type != 'integer':
             print('Please enter a numeric column')
             return self
-        if upper == None and lower == None:
+        #check that at least an upper or lower bound is given
+        if upper is None and lower is None:
             print('Please provide and upper or lower bound')
             return self        
-        elif(lower == None):
-            self.df = self.df.withColumn(f"{column}_bounds", F.when(self.df[column] <=upper, True).otherwise(False))
+        elif(lower is None):
+            #if only upper is given, find if values are less than or equal to the upper bound 
+            #create new column with True or False or NULL if original value is NULL
+            self.df = self.df.withColumn(f"{column}_bounds", F.when(F.isnull(self.df[column]), None).when(self.df[column] <=upper, True).otherwise(False))
             return self
-        elif(upper == None):
-            self.df = self.df.withColumn(f"{column}_bounds", F.when(self.df[column] >=lower, True).otherwise(False))
+        elif(upper is None):
+            #if only lower is given, find if values are greater than or equal to the lower bound 
+            #create new column with True or False or NULL if original value is NULL
+            self.df = self.df.withColumn(f"{column}_bounds", F.when(F.isnull(self.df[column]), None).when(self.df[column] >=lower, True).otherwise(False))
             return self
         else:
-            self.df = self.df.withColumn(f"{column}_bounds", F.when(self.df[column].between(lower,upper), True).otherwise(False))
+            #if both upper and lower bound are give, check that the value is between the bounds
+            #create new column with True or False or NULL if original value is NULL 
+            self.df = self.df.withColumn(f"{column}_bounds", F.when(F.isnull(self.df[column]), None).when(self.df[column].between(lower,upper), True).otherwise(False))
             return self
 
-    def string_limit_check(self, column, string):
-        #should string be a list??
-        #!!!deal with NULL values!!!
+    def string_limit_check(self, column: str, string: str):
+        """
+        Checks if each value in a string column falls within the defined set of levels. 
+        
+        Args:
+            column (str): name of the numeric column.
+            string (str): string to check column value against. 
+        
+        Returns:
+            self: return the instance of the SparkDataCheck object. 
+        """
+        #get dictionary of column data types
         types = dict(self.df.dtypes)
         
+        #check if the data type of the supplied column is a string 
         if types[column] != 'string':
             print('Please enter a string column')
             return self
         
-        self.df = self.df.withColumn(f"{column}_check", F.when(self.df[column].isin(string),True).otherwise(False))
+        #check if the value of the column matched or is in the supplied string 
+        #return True or False or NULL if the original value is NULL
+        self.df = self.df.withColumn(f"{column}_check", F.when(F.isnull(self.df[column]), None).when(self.df[column].isin(string),True).otherwise(False))
         
         return self 
 
-    def missing_check(self, column):
+    def missing_check(self, column: str):
+        """
+        Checks if each value in a column is missing (is NULL). 
+        
+        Args:
+            column (str): name of the column to check. 
+        
+        Returns:
+            self: return the instance of the SparkDataCheck object. 
+        """
+        #check which column values are missing or NULL
         self.df = self.df.withColumn("missing_check", F.isnull(self.df[column]))
         return self 
-'''        
-    def min_and_max(self, column=None, grouping=None):
-        types = dict(df.dtypes())
+        
+    def min_and_max(self, main_column: str = None , grouping_column: str = None):
+        """
+        Reports the min and max of a numeric column. 
+        
+        Args:
+            main_column (str): primary column to calculate the min and max of. 
+            grouping_column (str): optional column to group main column by. 
+            
+        Returns:
+            Spark SQL dataframe. 
+        """
+        if main_column is not None:
+            
+            #get the data types for each column
+            types = dict(self.df.dtypes)   
+            #get the data type for the main column
+            column_type = types[main_column]
+            
+            #check that the main column given is a numeric data type, if not print an error message
+            if column_type != 'bigint' and column_type != 'int' and column_type != 'longint' and column_type != 'double' and column_type != 'integer':
+                print('Please enter a numeric column')
+                return None
+            #if a main column is specified WITHOUT a grouping column 
+            if grouping_column is None:
+                #return min and max of the given column
+                return self.df.agg(F.min(main_column).alias(f"{main_column}_min"),F.max(main_column).alias(f"{main_column}_max"))
+            #if a main column is specified WITH a grouping column
+            else:
+                #return min and max of the given main column grouped by the grouping column
+                return self.df.groupby(grouping_column).agg(F.min(main_column).alias(f"{main_column}_min"),F.max(main_column).alias(f"{main_column}_max"))
+        else:
+            if grouping_column is None:
+                numeric_cols = [c for c, t in self.df.dtypes if t.startswith('int') or t.startswith('double') or t.startswith('float') or t.startswith('decimal') or t.startswith('longint') or t.startswith('bigint')]
+                min_aggregations = [F.min(F.col(c)).alias(f"min_{c}") for c in numeric_cols]
+                max_aggregations = [F.max(F.col(c)).alias(f"max_{c}") for c in numeric_cols]
 
-        if types[column] != 'float' or 'int' or 'longint' or 'bigint' or 'double' or 'integer':
-            print('Please enter a numeric column')
-            return None
+                # Combine all aggregations and apply to the DataFrame
+                all_aggregations = min_aggregations + max_aggregations
+                return self.df.agg(*all_aggregations)
+            else:
+                return "Still working on this"
         
-    def string_counts(self, column_1, column_2 = None):
-        types = dict(df.dtypes())
+    def string_counts(self, main_column, grouping_column = None):
+        """
+        Reports the counts associated with one or tow string columns.
         
-        if column_2 != None:
-            if types[column_2] != 'string':
+        Args:
+            main_column (str): primary column to calculate the min and max of. 
+            grouping_column (str): optional column to group main column by. 
+            
+        Returns:
+            Spark SQL dataframe. 
+        """
+        #get the data types of the columns in the DataFrame 
+        types = dict(self.df.dtypes)
+        
+        #if a grouping column is provided, check that it is a string type 
+        if grouping_column is not None:
+            if types[grouping_column] != 'string':
                 print("Please enter a string column")
                 return None 
-        if types[column_1] != 'string':
+            
+        #check that the main column provided is a string 
+        if types[main_column] != 'string':
             print("Please enter a string column")
             return None 
         
-        if column_2 == None:
-            return df.column1.count() 
-        elif:
-            df.column_1.groupBy(column_2).count()
- '''           
+        #if no grouping column is given, get the counts of the specified column
+        if grouping_column is None:
+            return self.df.select(F.count(self.df[main_column]))
+        #if a grouping column is given. get the counts of the specified column grouped by the grouping column 
+        else:
+            return self.df.groupBy(grouping_column).agg(F.count(main_column))
+
         
         
         
