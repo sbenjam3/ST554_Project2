@@ -157,15 +157,39 @@ class SparkDataCheck:
                 return self.df.groupby(grouping_column).agg(F.min(main_column).alias(f"{main_column}_min"),F.max(main_column).alias(f"{main_column}_max"))
         else:
             if grouping_column is None:
-                numeric_cols = [c for c, t in self.df.dtypes if t.startswith('int') or t.startswith('double') or t.startswith('float') or t.startswith('decimal') or t.startswith('longint') or t.startswith('bigint')]
-                min_aggregations = [F.min(F.col(c)).alias(f"min_{c}") for c in numeric_cols]
-                max_aggregations = [F.max(F.col(c)).alias(f"max_{c}") for c in numeric_cols]
-
-                # Combine all aggregations and apply to the DataFrame
-                all_aggregations = min_aggregations + max_aggregations
-                return self.df.agg(*all_aggregations)
+                #create a dictionary to hold the sum and mean statsitics for each column
+                master_stats = {}
+                #create list of Numeric column names 
+                numeric_cols = [c for c, t in self.df.dtypes if t.startswith('string')==False]
+                #for each column run aggregation functions and collect values 
+                for column in numeric_cols:
+                    stats = self.df.agg(F.min(column), F.max(column)).collect()
+                    #add statistics to master dictionary
+                    master_stats[column] = {'min' : stats[0][0], 'max' : stats[0][1]}
+                #create and return pandas dataframe made from dictionary 
+                return pd.DataFrame(master_stats)
+                
             else:
-                return "Still working on this"
+                #create list of Numeric column names 
+                numeric_cols = [c for c, t in self.df.dtypes if t.startswith('string')==False]
+                #for each column run aggregation functions and collect values 
+                for index,column in enumerate(numeric_cols):
+                    #create a dictionary per column to hold values 
+                    column_dict = {'group_value' : [], f'min_{column}' : [], f'max_{column}' : []}
+                    #collect list of statistics for the column
+                    stats = self.df.groupby(grouping_column).agg(F.min(column), F.max(column)).collect()
+                    #add statistics to column dictionary
+                    for x in range(len(stats)):
+                        column_dict['group_value'].append(stats[x][0])
+                        column_dict[f'min_{column}'].append(stats[x][1])
+                        column_dict[f'max_{column}'].append(stats[x][2])
+                    #append column_dict to master_dict
+                    if index == 0:
+                        master_pd_dataframe = pd.DataFrame(column_dict) 
+                    else:
+                        temp_df = pd.DataFrame(column_dict)
+                        master_pd_dataframe = pd.merge(master_pd_dataframe, temp_df, on = 'group_value')
+                return master_pd_dataframe
         
     def string_counts(self, main_column, grouping_column = None):
         """
