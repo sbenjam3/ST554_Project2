@@ -86,7 +86,7 @@ class SparkDataCheck:
             self.df = self.df.withColumn(f"{column}_bounds", F.when(F.isnull(self.df[column]), None).when(self.df[column].between(lower,upper), True).otherwise(False))
             return self
 
-    def string_limit_check(self, column: str, string: str):
+    def string_limit_check(self, column: str, string: list):
         """
         Checks if each value in a string column falls within the defined set of levels. 
         
